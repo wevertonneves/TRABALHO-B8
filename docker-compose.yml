@@ -1,0 +1,65 @@
+version: "3.9"
+
+services:
+  # 🧱 Serviço do MySQL
+  mysql:
+    image: mysql:8.0
+    container_name: pontocerto-mysql
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
+      MYSQL_DATABASE: ${MYSQL_DATABASE}
+    ports:
+      - "3307:3306"
+    volumes:
+      - ./mysql/data:/var/lib/mysql
+      - ./mysql/init.sql:/docker-entrypoint-initdb.d/init.sql
+    networks:
+      - pontocerto-network
+    command: --default-authentication-plugin=mysql_native_password
+
+  # 🚀 Serviço do Backend
+  backend:
+    build:
+      context: ./back
+      dockerfile: Dockerfile
+    container_name: pontocerto-backend
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      NODE_ENV: ${NODE_ENV}
+      DB_HOST: ${DB_HOST}
+      DB_USER: ${DB_USER}
+      DB_PASSWORD: ${DB_PASSWORD}
+      DB_NAME: ${DB_NAME}
+      PORT: ${PORT}
+      JWT_SECRET: ${JWT_SECRET}
+      EMAIL_USER: ${EMAIL_USER}
+      EMAIL_PASS: ${EMAIL_PASS}
+    ports:
+      - "3001:3001"
+    depends_on:
+      - mysql
+    volumes:
+      - ./back/uploads:/app/uploads
+      - ./back/src:/app/src
+    networks:
+      - pontocerto-network
+    command: >
+      sh -c "
+        apk add --no-cache netcat-openbsd &&
+        echo '🔄 Aguardando MySQL iniciar...' &&
+        while ! nc -z mysql 3306; do
+          sleep 2
+          echo '⏳ Aguardando MySQL...'
+        done &&
+        echo '✅ MySQL disponível! Iniciando o servidor Node...' &&
+        npm start
+      "
+
+networks:
+  pontocerto-network:
+    driver: bridge

@@ -1,0 +1,70 @@
+# ===========================
+# 🌍 GERAL
+# ===========================
+# Logs e sistema
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+debug.log
+.DS_Store
+Thumbs.db
+
+# Pastas temporárias
+tmp/
+temp/
+.cache/
+dist/
+build/
+.env
+.env.dev
+.env.production
+.env.local
+.env.test
+
+# ===========================
+# 🖥️ BACKEND
+# ===========================
+/back/node_modules/
+/back/uploads/
+/back/package-lock.json
+/back/.env
+/back/.env.dev
+/back/.env.local
+/back/.env.test
+/back/npm-debug.log
+
+# Banco de dados local
+/mysql/data/
+*.sql
+
+# ===========================
+# 💻 FRONTEND
+# ===========================
+/meu-app/node_modules/
+/meu-app/dist/
+/meu-app/build/
+/meu-app/.env
+/meu-app/.env.local
+/meu-app/.env.production
+/meu-app/.env.development
+/meu-app/.env.test
+
+# ===========================
+# 🐳 DOCKER
+# ===========================
+/mysql/data/
+**/docker-compose.override.yml
+**/docker-compose.local.yml
+
+# ===========================
+# 🧪 VARIADOS
+# ===========================
+.idea/
+.vscode/
+*.iml
+*.swp
+*.swo
+*.bak
+*.tmp
