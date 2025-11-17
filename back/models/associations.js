@@ -1,12 +1,39 @@
-// models/associations.js
+const User = require("./User");
 const Place = require("./Place");
 const Reservation = require("./Reservation");
-const User = require("./User");
 const Favorite = require("./FavoriteModel");
 
-const setupAssociations = () => {
+function setupAssociations() {
   try {
-    // Place <-> Reservation
+    console.log("🔄 Configurando associações...");
+
+    // ✅ User -> Reservation (MANTIDO como está - funcionando)
+    User.hasMany(Reservation, {
+      foreignKey: "userId",
+      as: "reservations",
+      constraints: false,
+    });
+
+    Reservation.belongsTo(User, {
+      foreignKey: "userId",
+      as: "user",
+      constraints: false,
+    });
+
+    // ✅ User -> Favorite (CORRIGIDO: user_id)
+    User.hasMany(Favorite, {
+      foreignKey: "user_id", // ✅ CORRIGIDO: user_id
+      as: "favorites",
+      constraints: false,
+    });
+
+    Favorite.belongsTo(User, {
+      foreignKey: "user_id", // ✅ CORRIGIDO: user_id
+      as: "user",
+      constraints: false,
+    });
+
+    // ✅ Place -> Reservation (MANTIDO como está - funcionando)
     Place.hasMany(Reservation, {
       foreignKey: "placeId",
       as: "reservations",
@@ -14,46 +41,25 @@ const setupAssociations = () => {
 
     Reservation.belongsTo(Place, {
       foreignKey: "placeId",
-      as: "place", // ← MESMO 'as' usado no include
+      as: "place",
     });
 
-    // User <-> Reservation
-    User.hasMany(Reservation, {
-      foreignKey: "userId",
-      as: "reservations",
-    });
-
-    Reservation.belongsTo(User, {
-      foreignKey: "userId",
-      as: "user",
-    });
-
-    // User <-> Favorite
-    User.hasMany(Favorite, {
-      foreignKey: "user_id",
-      as: "favorites",
-    });
-
-    Favorite.belongsTo(User, {
-      foreignKey: "user_id",
-      as: "user",
-    });
-
-    // Place <-> Favorite
+    // ✅ Place -> Favorite (CORRIGIDO: place_id)
     Place.hasMany(Favorite, {
-      foreignKey: "place_id",
+      foreignKey: "place_id", // ✅ CORRIGIDO: place_id
       as: "favorites",
     });
 
     Favorite.belongsTo(Place, {
-      foreignKey: "place_id",
-      as: "place", // ← MESMO 'as' usado no include
+      foreignKey: "place_id", // ✅ CORRIGIDO: place_id
+      as: "place",
     });
 
-    console.log("✅ Todas as associações configuradas com sucesso");
+    console.log("✅ Associações configuradas com sucesso");
   } catch (error) {
     console.error("❌ Erro ao configurar associações:", error);
+    throw error;
   }
-};
+}
 
 module.exports = setupAssociations;

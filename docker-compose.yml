@@ -48,17 +48,6 @@ services:
       - ./back/src:/app/src
     networks:
       - pontocerto-network
-    command: >
-      sh -c "
-        apk add --no-cache netcat-openbsd &&
-        echo '🔄 Aguardando MySQL iniciar...' &&
-        while ! nc -z mysql 3306; do
-          sleep 2
-          echo '⏳ Aguardando MySQL...'
-        done &&
-        echo '✅ MySQL disponível! Iniciando o servidor Node...' &&
-        npm start
-      "
 
 networks:
   pontocerto-network:

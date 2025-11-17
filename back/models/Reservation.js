@@ -218,4 +218,8 @@ Reservation.init(
   }
 );
 
+// ❌❌❌ REMOVA COMPLETAMENTE ESTA PARTE ❌❌❌
+// Os relacionamentos já estão definidos no models/associations.js
+// Não defina os relacionamentos aqui para evitar conflitos
+
 module.exports = Reservation;

@@ -5,6 +5,7 @@ const Favorite = require("../models/FavoriteModel");
 const bcrypt = require("bcryptjs");
 const nodemailer = require("nodemailer");
 const jwt = require("jsonwebtoken");
+const messagingService = require("../services/messagingService");
 
 // ---------- Configuração para envio de email ----------
 const transporter = nodemailer.createTransport({
@@ -56,6 +57,14 @@ const createUser = async (req, res) => {
       role: userRole,
     });
 
+    // ✅ Publica evento de usuário criado (não bloqueante)
+    messagingService.publishUserEvent("user.created", {
+      id: user.id,
+      name: user.name,
+      email: user.email,
+      role: user.role,
+    });
+
     res.status(201).json({
       success: true,
       message: "Usuário criado com sucesso!",
@@ -91,6 +100,13 @@ const loginUser = async (req, res) => {
       process.env.JWT_SECRET || "segredo_super_forte",
       { expiresIn: "1h" }
     );
+
+    // ✅ Publica evento de login (não bloqueante)
+    messagingService.publishUserEvent("user.logged_in", {
+      id: user.id,
+      email: user.email,
+      timestamp: new Date().toISOString(),
+    });
 
     res.status(200).json({
       success: true,
@@ -142,6 +158,13 @@ const changePassword = async (req, res) => {
     const hashedPassword = await bcrypt.hash(newPassword, 10);
     await user.update({ password: hashedPassword });
 
+    // ✅ Publica evento de senha alterada (não bloqueante)
+    messagingService.publishUserEvent("user.password_changed", {
+      id: user.id,
+      email: user.email,
+      timestamp: new Date().toISOString(),
+    });
+
     res
       .status(200)
       .json({ success: true, message: "Senha alterada com sucesso!" });
@@ -190,6 +213,14 @@ const sendCode = async (req, res) => {
     });
 
     console.log(`Código enviado para ${email}: ${code}`);
+
+    // ✅ Publica evento de código enviado (não bloqueante)
+    messagingService.publishUserEvent("user.password_reset_code_sent", {
+      id: user.id,
+      email: user.email,
+      timestamp: new Date().toISOString(),
+    });
+
     res
       .status(200)
       .json({ success: true, message: "Código enviado com sucesso!" });
@@ -237,6 +268,13 @@ const resetPassword = async (req, res) => {
     const hashedPassword = await bcrypt.hash(newPassword, 10);
     await user.update({ password: hashedPassword, reset_code: null });
 
+    // ✅ Publica evento de senha resetada (não bloqueante)
+    messagingService.publishUserEvent("user.password_reset", {
+      id: user.id,
+      email: user.email,
+      timestamp: new Date().toISOString(),
+    });
+
     res
       .status(200)
       .json({ success: true, message: "Senha alterada com sucesso!" });
@@ -274,8 +312,53 @@ const verifyPassword = async (req, res) => {
 };
 
 const deleteAccount = async (req, res) => {
+  const transaction = await User.sequelize.transaction();
+
   try {
     const userId = req.user?.id;
+
+    const user = await User.findByPk(userId, { transaction });
+    if (!user) {
+      await transaction.rollback();
+      return res
+        .status(404)
+        .json({ success: false, message: "Usuário não encontrado" });
+    }
+
+    // ✅ Publica evento ANTES de deletar (não bloqueante)
+    messagingService.publishUserEvent("user.deleted", {
+      id: user.id,
+      email: user.email,
+    });
+
+    // Deletar reservas e favoritos antes do usuário
+    if (Reservation) {
+      await Reservation.destroy({ where: { userId }, transaction });
+    }
+
+    if (Favorite) {
+      await Favorite.destroy({ where: { user_id: userId }, transaction });
+    }
+
+    await User.destroy({ where: { id: userId }, transaction });
+
+    await transaction.commit();
+
+    res
+      .status(200)
+      .json({ success: true, message: "Conta deletada com sucesso!" });
+  } catch (error) {
+    await transaction.rollback();
+    console.error("Erro ao deletar conta:", error);
+    res.status(500).json({ success: false, message: "Erro ao deletar conta" });
+  }
+};
+
+// ---------- ATUALIZAR PERFIL ----------
+const updateProfile = async (req, res) => {
+  try {
+    const userId = req.user?.id;
+    const { name, email } = req.body;
 
     const user = await User.findByPk(userId);
     if (!user)
@@ -283,33 +366,51 @@ const deleteAccount = async (req, res) => {
         .status(404)
         .json({ success: false, message: "Usuário não encontrado" });
 
-    // Deletar reservas e favoritos antes do usuário (usando transação para garantir atomicidade)
-    const transaction = await User.sequelize.transaction();
-
-    try {
-      // Verificar se os modelos existem antes de tentar deletar
-      if (Reservation) {
-        await Reservation.destroy({ where: { userId }, transaction });
-      }
-
-      if (Favorite) {
-        await Favorite.destroy({ where: { user_id: userId }, transaction });
-      }
-
-      await User.destroy({ where: { id: userId }, transaction });
-
-      await transaction.commit();
-
-      res
-        .status(200)
-        .json({ success: true, message: "Conta deletada com sucesso!" });
-    } catch (error) {
-      await transaction.rollback();
-      throw error;
+    // Verificar se o email já existe em outro usuário
+    if (email && email !== user.email) {
+      const existingUser = await User.findOne({ where: { email } });
+      if (existingUser)
+        return res
+          .status(409)
+          .json({ success: false, message: "Email já está em uso" });
     }
+
+    const oldData = {
+      name: user.name,
+      email: user.email,
+    };
+
+    await user.update({
+      name: name || user.name,
+      email: email || user.email,
+    });
+
+    // ✅ Publica evento de perfil atualizado (não bloqueante)
+    messagingService.publishUserEvent("user.updated", {
+      id: user.id,
+      oldData: oldData,
+      newData: {
+        name: user.name,
+        email: user.email,
+      },
+      timestamp: new Date().toISOString(),
+    });
+
+    res.status(200).json({
+      success: true,
+      message: "Perfil atualizado com sucesso!",
+      user: {
+        id: user.id,
+        name: user.name,
+        email: user.email,
+        role: user.role,
+      },
+    });
   } catch (error) {
-    console.error("Erro ao deletar conta:", error);
-    res.status(500).json({ success: false, message: "Erro ao deletar conta" });
+    console.error("Erro ao atualizar perfil:", error);
+    res
+      .status(500)
+      .json({ success: false, message: "Erro ao atualizar perfil" });
   }
 };
 
@@ -330,6 +431,30 @@ const getAllUsers = async (req, res) => {
   }
 };
 
+// ---------- OBTER PERFIL DO USUÁRIO ----------
+const getUserProfile = async (req, res) => {
+  try {
+    const userId = req.user?.id;
+
+    const user = await User.findByPk(userId, {
+      attributes: ["id", "name", "email", "role", "created_at"],
+    });
+
+    if (!user)
+      return res
+        .status(404)
+        .json({ success: false, message: "Usuário não encontrado" });
+
+    res.status(200).json({
+      success: true,
+      user,
+    });
+  } catch (error) {
+    console.error("Erro ao buscar perfil:", error);
+    res.status(500).json({ success: false, message: "Erro ao buscar perfil" });
+  }
+};
+
 module.exports = {
   createUser,
   loginUser,
@@ -341,4 +466,6 @@ module.exports = {
   verifyPassword,
   deleteAccount,
   getAllUsers,
+  updateProfile,
+  getUserProfile,
 };

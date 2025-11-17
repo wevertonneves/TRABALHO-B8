@@ -87,7 +87,23 @@ class ReservationController {
   // 📋 Listar todas as reservas (com dados do local)
   static async getReservations(req, res) {
     try {
+      console.log("🔍 [DEBUG] Buscando TODAS as reservas...");
       const reservations = await Reservation.findAllWithPlace();
+
+      // ✅ DEBUG: Verificar se os places estão vindo
+      console.log(
+        `📊 [DEBUG] ${reservations.length} reservas encontradas no total`
+      );
+      reservations.forEach((reserva, index) => {
+        console.log(`📍 Reserva ${index + 1}:`, {
+          id: reserva.id,
+          placeId: reserva.placeId,
+          hasPlace: !!reserva.place,
+          placeName: reserva.place ? reserva.place.name : "NÃO TEM PLACE",
+          placeData: reserva.place || "PLACE NÃO VINDO",
+        });
+      });
+
       res.json({ success: true, reservations });
     } catch (error) {
       console.error("Erro ao buscar reservas:", error);
@@ -101,7 +117,25 @@ class ReservationController {
   static async getReservationsByUser(req, res) {
     const { userId } = req.params;
     try {
+      console.log(`🔍 [DEBUG] Buscando reservas para userId: ${userId}`);
+
       const reservations = await Reservation.findByUserWithPlace(userId);
+
+      // ✅ DEBUG: Verifique se o place está vindo
+      console.log(
+        `📊 [DEBUG] ${reservations.length} reservas encontradas para usuário ${userId}`
+      );
+
+      reservations.forEach((reserva, index) => {
+        console.log(`📍 Reserva ${index + 1}:`, {
+          id: reserva.id,
+          placeId: reserva.placeId,
+          hasPlace: !!reserva.place,
+          placeName: reserva.place ? reserva.place.name : "NÃO TEM PLACE",
+          placeData: reserva.place || "PLACE NÃO VINDO",
+        });
+      });
+
       res.json({ success: true, reservations });
     } catch (error) {
       console.error(`Erro ao buscar reservas do usuário ${userId}:`, error);
@@ -116,10 +150,22 @@ class ReservationController {
   static async deleteReservation(req, res) {
     const { id } = req.params;
     try {
+      console.log(`🗑️ [DEBUG] Deletando reserva ID: ${id}`);
       const result = await Reservation.deleteReservation(id);
+
+      // ✅ Tentar restaurar capacidade (se necessário)
+      try {
+        // Aqui você pode adicionar lógica para restaurar capacidade se precisar
+        console.log(
+          `🔄 [DEBUG] Reserva ${id} deletada, considerar restaurar capacidade`
+        );
+      } catch (err) {
+        console.error("⚠️ Erro ao restaurar capacidade:", err.message);
+      }
+
       res.json({ success: true, ...result });
     } catch (error) {
-      console.error(`Erro ao deletar reserva ${id}:`, error);
+      console.error(`❌ Erro ao deletar reserva ${id}:`, error);
       if (error.message === "Reserva não encontrada") {
         return res
           .status(404)
@@ -134,6 +180,12 @@ class ReservationController {
   // 📊 Consultar vagas disponíveis por local e data
   static async getAvailableSpots(req, res) {
     const { placeId, reservedAt } = req.query;
+
+    console.log("🔍 [DEBUG] Consultando disponibilidade:", {
+      placeId,
+      reservedAt,
+    });
+
     if (!placeId || !reservedAt) {
       return res.status(400).json({
         success: false,
@@ -146,9 +198,12 @@ class ReservationController {
         placeId,
         reservedAt
       );
+
+      console.log("📊 [DEBUG] Disponibilidade retornada:", availability);
+
       res.json({ success: true, ...availability });
     } catch (error) {
-      console.error("Erro ao consultar vagas disponíveis:", error);
+      console.error("❌ Erro ao consultar vagas disponíveis:", error);
       if (error.message === "Local não encontrado") {
         return res
           .status(404)
@@ -165,10 +220,17 @@ class ReservationController {
   static async getReservationsByPlace(req, res) {
     const { placeId } = req.params;
     try {
+      console.log(`🔍 [DEBUG] Buscando reservas para placeId: ${placeId}`);
+
       const reservations = await Reservation.findByPlace(placeId);
+
+      console.log(
+        `📊 [DEBUG] ${reservations.length} reservas encontradas para local ${placeId}`
+      );
+
       res.json({ success: true, reservations });
     } catch (error) {
-      console.error(`Erro ao buscar reservas do local ${placeId}:`, error);
+      console.error(`❌ Erro ao buscar reservas do local ${placeId}:`, error);
       res.status(500).json({
         success: false,
         error: "Erro ao buscar reservas do local",

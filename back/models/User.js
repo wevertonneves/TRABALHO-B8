@@ -1,6 +1,5 @@
-// models/User.js
 const { DataTypes, Model } = require("sequelize");
-const sequelize = require("../config/database");
+const { usersDB } = require("../config/database"); // Mudança aqui
 
 class User extends Model {}
 
@@ -43,7 +42,7 @@ User.init(
     },
   },
   {
-    sequelize,
+    sequelize: usersDB, // Mudança aqui - usa o banco de usuários
     tableName: "users",
     timestamps: true,
     createdAt: "created_at",
