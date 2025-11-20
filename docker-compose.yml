@@ -1,54 +1,179 @@
 version: "3.9"
 
 services:
-  # 🧱 Serviço do MySQL
-  mysql:
+  # 🧱 Banco de Dados PRINCIPAL (main-service)
+  mysql-main:
     image: mysql:8.0
-    container_name: pontocerto-mysql
+    container_name: pontocerto-mysql-main
     restart: unless-stopped
-    env_file:
-      - .env
     environment:
-      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
-      MYSQL_DATABASE: ${MYSQL_DATABASE}
-    ports:
-      - "3307:3306"
+      MYSQL_ROOT_PASSWORD: ${DB_PASSWORD:-rootpassword}
+      MYSQL_DATABASE: ${DB_NAME:-pontocerto_db}
     volumes:
-      - ./mysql/data:/var/lib/mysql
-      - ./mysql/init.sql:/docker-entrypoint-initdb.d/init.sql
+      - mysql_main_data:/var/lib/mysql
+      - ./mysql-main/init.sql:/docker-entrypoint-initdb.d/init.sql
     networks:
       - pontocerto-network
-    command: --default-authentication-plugin=mysql_native_password
+    command: --default-authentication-plugin=mysql_native_password --innodb-buffer-pool-size=128M --innodb-log-file-size=48M
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "mysql -u root -p${DB_PASSWORD:-rootpassword} -e 'SELECT 1'",
+        ]
+      interval: 20s
+      timeout: 10s
+      retries: 8
+      start_period: 40s
 
-  # 🚀 Serviço do Backend
-  backend:
-    build:
-      context: ./back
-      dockerfile: Dockerfile
-    container_name: pontocerto-backend
+  # 🧱 Banco de Dados de USUÁRIOS (users-service)
+  mysql-users:
+    image: mysql:8.0
+    container_name: pontocerto-mysql-users
     restart: unless-stopped
-    env_file:
-      - .env
     environment:
-      NODE_ENV: ${NODE_ENV}
-      DB_HOST: ${DB_HOST}
-      DB_USER: ${DB_USER}
-      DB_PASSWORD: ${DB_PASSWORD}
-      DB_NAME: ${DB_NAME}
-      PORT: ${PORT}
-      JWT_SECRET: ${JWT_SECRET}
+      MYSQL_ROOT_PASSWORD: ${DB_PASSWORD:-rootpassword}
+      MYSQL_DATABASE: ${USERS_DB_NAME:-pontocerto_users_db}
+    volumes:
+      - mysql_users_data:/var/lib/mysql
+      - ./mysql-users/init.sql:/docker-entrypoint-initdb.d/init.sql
+    networks:
+      - pontocerto-network
+    command: --default-authentication-plugin=mysql_native_password --innodb-buffer-pool-size=128M --innodb-log-file-size=48M
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "mysql -u root -p${DB_PASSWORD:-rootpassword} -e 'SELECT 1'",
+        ]
+      interval: 20s
+      timeout: 10s
+      retries: 8
+      start_period: 40s
+
+  # 🐰 RabbitMQ (COM PORTAS EXPOSAS)
+  rabbitmq:
+    image: rabbitmq:3-management
+    container_name: pontocerto-rabbitmq
+    restart: unless-stopped
+    environment:
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER:-guest}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASS:-guest}
+    ports:
+      - "5672:5672" # AMQP protocol
+      - "15672:15672" # Management UI
+    volumes:
+      - rabbitmq_data:/var/lib/rabbitmq
+    networks:
+      - pontocerto-network
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "ping"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+
+  # 🚀 Backend USERS-SERVICE
+  backend-users:
+    build:
+      context: ./backend-users
+      dockerfile: Dockerfile
+    container_name: pontocerto-backend-users
+    restart: unless-stopped
+    environment:
+      DB_HOST: mysql-users
+      DB_USER: root
+      DB_PASSWORD: ${DB_PASSWORD:-rootpassword}
+      DB_NAME: ${USERS_DB_NAME:-pontocerto_users_db}
+      DB_PORT: 3306
+      NODE_ENV: development
+      PORT: 3001
+      JWT_SECRET: ${JWT_SECRET:-jwt_secret_fallback}
       EMAIL_USER: ${EMAIL_USER}
       EMAIL_PASS: ${EMAIL_PASS}
-    ports:
-      - "3001:3001"
+      RABBITMQ_URL: amqp://rabbitmq:5672
     depends_on:
-      - mysql
+      mysql-users:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
     volumes:
-      - ./back/uploads:/app/uploads
-      - ./back/src:/app/src
+      - ./backend-users/uploads:/app/uploads
     networks:
       - pontocerto-network
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:3001/ || exit 1"]
+      interval: 15s
+      timeout: 10s
+      retries: 10
+      start_period: 40s
+
+  # 🚀 Backend MAIN-SERVICE
+  backend-main:
+    build:
+      context: ./backend-main
+      dockerfile: Dockerfile
+    container_name: pontocerto-backend-main
+    restart: unless-stopped
+    environment:
+      DB_HOST: mysql-main
+      DB_USER: root
+      DB_PASSWORD: ${DB_PASSWORD:-rootpassword}
+      DB_NAME: ${DB_NAME:-pontocerto_db}
+      DB_PORT: 3306
+      NODE_ENV: development
+      PORT: 3003
+      JWT_SECRET: ${JWT_SECRET:-jwt_secret_fallback}
+      USER_SERVICE_URL: http://backend-users:3001
+      USERS_DB_NAME: ${USERS_DB_NAME:-pontocerto_users_db}
+      EMAIL_USER: ${EMAIL_USER}
+      EMAIL_PASS: ${EMAIL_PASS}
+      RABBITMQ_URL: amqp://rabbitmq:5672
+    depends_on:
+      mysql-main:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+      backend-users:
+        condition: service_healthy
+    volumes:
+      - ./backend-main/uploads:/app/uploads
+    networks:
+      - pontocerto-network
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:3003/ || exit 1"]
+      interval: 15s
+      timeout: 10s
+      retries: 10
+      start_period: 40s
+
+  # 🚀 NGINX API GATEWAY
+  nginx-gateway:
+    image: nginx:alpine
+    container_name: pontocerto-gateway
+    restart: unless-stopped
+    ports:
+      - "80:80"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf
+      - ./nginx/conf.d:/etc/nginx/conf.d
+    depends_on:
+      backend-users:
+        condition: service_healthy
+      backend-main:
+        condition: service_healthy
+    networks:
+      - pontocerto-network
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost/ || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
 
 networks:
   pontocerto-network:
     driver: bridge
+
+volumes:
+  mysql_main_data:
+  mysql_users_data:
+  rabbitmq_data:

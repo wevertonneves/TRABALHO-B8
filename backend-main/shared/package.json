@@ -1,0 +1,6 @@
+{
+  "dependencies": {
+    "amqplib": "^0.10.9",
+    "cors": "^2.8.5"
+  }
+}

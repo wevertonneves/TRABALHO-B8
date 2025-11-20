@@ -26,14 +26,23 @@ build/
 # ===========================
 # 🖥️ BACKEND
 # ===========================
-/back/node_modules/
-/back/uploads/
-/back/package-lock.json
-/back/.env
-/back/.env.dev
-/back/.env.local
-/back/.env.test
-/back/npm-debug.log
+backend-main/node_modules/
+backend-main/uploads/
+backend-main/package-lock.json
+backend-main/.env
+backend-main/.env.dev
+backend-main/.env.local
+backend-main/.env.test
+backend-main/npm-debug.log
+backend-users/node_modules/
+backend-users/uploads/
+backend-users/package-lock.json
+backend-users/.env
+backend-users/.env.dev
+backend-users/.env.local
+backend-users/.env.test
+backend-users/npm-debug.log
+
 
 # Banco de dados local
 /mysql/data/
