@@ -1,15 +1,14 @@
-// middleware/authMiddleware.js - VERIFIQUE SE ESTÁ CORRETO
+// middleware/authMiddleware.js - VERSÃO CORRIGIDA
 const jwt = require("jsonwebtoken");
 
-// ✅ CERTIFIQUE-SE DE QUE AS FUNÇÕES ESTÃO SENDO EXPORTADAS CORRETAMENTE
+// ✅ CERTIFIQUE-SE DE QUE AS FUNÇÕES ESTÃO SENDEndo EXPORTADAS CORRETAMENTE
 const authenticateToken = (req, res, next) => {
   try {
     const authHeader = req.headers["authorization"];
     const token = authHeader && authHeader.split(" ")[1];
 
-    console.log(
-      `🔧 CORS - Origin: ${req.headers.origin}, Method: ${req.method}`
-    );
+    // ✅ REMOVIDO O LOG DO CORS DAQUI
+    // console.log(`🔧 CORS - Origin: ${req.headers.origin}, Method: ${req.method}`);
 
     if (!token) {
       return res.status(401).json({

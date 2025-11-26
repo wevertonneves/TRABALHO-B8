@@ -1,5 +1,4 @@
-const Place = require("../models/Place");
-const Reservation = require("../models/Reservation");
+const placeService = require("../services/placeService");
 const path = require("path");
 const fs = require("fs");
 
@@ -31,7 +30,7 @@ class PlacesController {
 
     try {
       if (!imageUrl)
-        return res.status(400).json({ error: "URL da imagem é obrigatória." });
+        return res.status(400).json({ error: "URL da imagem e obrigatoria." });
 
       const filename = path.basename(imageUrl);
       const filePath = path.join(__dirname, "../uploads", filename);
@@ -40,7 +39,7 @@ class PlacesController {
         fs.unlinkSync(filePath);
         res.json({ success: true, message: "Imagem deletada com sucesso!" });
       } else {
-        res.status(404).json({ error: "Imagem não encontrada." });
+        res.status(404).json({ error: "Imagem nao encontrada." });
       }
     } catch (error) {
       res.status(500).json({ error: "Erro ao deletar imagem." });
@@ -50,9 +49,10 @@ class PlacesController {
   // 📋 LISTAR TODOS OS LOCAIS
   static async getAllPlaces(req, res) {
     try {
-      const places = await Place.findAll({ order: [["id", "ASC"]] });
+      const places = await placeService.getAllPlaces();
       res.json(places);
     } catch (error) {
+      console.error("Erro ao buscar locais:", error);
       res.status(500).json({ error: "Erro ao buscar locais." });
     }
   }
@@ -61,11 +61,13 @@ class PlacesController {
   static async getPlaceById(req, res) {
     const { id } = req.params;
     try {
-      const place = await Place.findByPk(id);
-      if (!place)
-        return res.status(404).json({ error: "Local não encontrado." });
+      const place = await placeService.getPlaceById(id);
       res.json(place);
     } catch (error) {
+      console.error("Erro ao buscar local:", error);
+      if (error.message === "Local nao encontrado") {
+        return res.status(404).json({ error: "Local nao encontrado." });
+      }
       res.status(500).json({ error: "Erro ao buscar local." });
     }
   }
@@ -83,26 +85,24 @@ class PlacesController {
       capacity = 10,
     } = req.body;
 
-    if (!name || !location) {
-      return res
-        .status(400)
-        .json({ error: "Nome e localização são obrigatórios." });
-    }
-
     try {
-      const newPlace = await Place.create({
+      const newPlace = await placeService.createPlace({
         name,
         location,
-        description: description || null,
+        description,
         category,
-        image: image || null,
-        latitude: latitude || null,
-        longitude: longitude || null,
+        image,
+        latitude,
+        longitude,
         capacity,
       });
 
       res.status(201).json(newPlace);
     } catch (error) {
+      console.error("Erro ao criar local:", error);
+      if (error.message === "Nome e localizacao sao obrigatorios") {
+        return res.status(400).json({ error: "Nome e localizacao sao obrigatorios." });
+      }
       res.status(500).json({ error: "Erro ao criar local." });
     }
   }
@@ -110,47 +110,16 @@ class PlacesController {
   // ✏️ ATUALIZAR LOCAL (ADMIN)
   static async updatePlace(req, res) {
     const { id } = req.params;
-    
-    const {
-      name,
-      location,
-      description,
-      category,
-      image,
-      latitude,
-      longitude,
-      capacity,
-    } = req.body;
+    const updateData = req.body;
 
     try {
-      const place = await Place.findByPk(id);
-      if (!place) {
-        return res.status(404).json({ error: "Local não encontrado." });
-      }
-
-      // Deleta imagem antiga se houver uma nova
-      if (image && place.image && place.image !== image) {
-        const oldFilename = path.basename(place.image);
-        const oldFilePath = path.join(__dirname, "../uploads", oldFilename);
-        if (fs.existsSync(oldFilePath)) {
-          fs.unlinkSync(oldFilePath);
-        }
-      }
-
-      await place.update({
-        name: name ?? place.name,
-        location: location ?? place.location,
-        description: description ?? place.description,
-        category: category ?? place.category,
-        image: image ?? place.image,
-        latitude: latitude ?? place.latitude,
-        longitude: longitude ?? place.longitude,
-        capacity: capacity ?? place.capacity,
-      });
-
-      const updatedPlace = await Place.findByPk(id);
+      const updatedPlace = await placeService.updatePlace(id, updateData);
       res.json(updatedPlace);
     } catch (error) {
+      console.error("Erro ao atualizar local:", error);
+      if (error.message === "Local nao encontrado") {
+        return res.status(404).json({ error: "Local nao encontrado." });
+      }
       res.status(500).json({ error: "Erro ao atualizar local." });
     }
   }
@@ -160,22 +129,13 @@ class PlacesController {
     const { id } = req.params;
     
     try {
-      const place = await Place.findByPk(id);
-      if (!place) {
-        return res.status(404).json({ error: "Local não encontrado." });
-      }
-
-      if (place.image) {
-        const filename = path.basename(place.image);
-        const filePath = path.join(__dirname, "../uploads", filename);
-        if (fs.existsSync(filePath)) {
-          fs.unlinkSync(filePath);
-        }
-      }
-
-      await place.destroy();
-      res.json({ message: "Local deletado com sucesso." });
+      const result = await placeService.deletePlace(id);
+      res.json(result);
     } catch (error) {
+      console.error("Erro ao deletar local:", error);
+      if (error.message === "Local nao encontrado") {
+        return res.status(404).json({ error: "Local nao encontrado." });
+      }
       res.status(500).json({ error: "Erro ao deletar local." });
     }
   }
@@ -186,50 +146,31 @@ class PlacesController {
     const finalPlaceId = id || placeId;
 
     if (!finalPlaceId) {
-      return res.status(400).json({ error: "ID do local é obrigatório." });
+      return res.status(400).json({ error: "ID do local e obrigatorio." });
     }
 
     try {
-      const place = await Place.findByPk(finalPlaceId);
-      if (!place) {
-        return res.status(404).json({ error: "Local não encontrado." });
-      }
-
-      const capacityTotal = place.capacity;
-      const reserved = await Reservation.countByPlaceAndDate(
-        finalPlaceId,
-        reservedAt ? reservedAt.split("T")[0] : null
-      );
-
-      const available = capacityTotal - reserved;
-
-      res.json({
-        placeId: finalPlaceId,
-        capacity: capacityTotal,
-        reserved,
-        available: available > 0 ? available : 0,
-      });
+      const capacityInfo = await placeService.getAvailableCapacity(finalPlaceId, reservedAt);
+      res.json(capacityInfo);
     } catch (error) {
-      res.status(500).json({ error: "Erro ao calcular capacidade disponível." });
+      console.error("Erro ao calcular capacidade disponivel:", error);
+      if (error.message === "Local nao encontrado") {
+        return res.status(404).json({ error: "Local nao encontrado." });
+      }
+      res.status(500).json({ error: "Erro ao calcular capacidade disponivel." });
     }
   }
 
-  // 🧩 REDUZIR CAPACIDADE AO FAZER RESERVA
-  static async reduceCapacity(placeId) {
+  // 🗂️ BUSCAR LOCAIS POR CATEGORIA
+  static async getPlacesByCategory(req, res) {
+    const { category } = req.params;
+    
     try {
-      const place = await Place.findByPk(placeId);
-      if (!place) throw new Error("Local não encontrado.");
-
-      if (place.capacity <= 0) {
-        throw new Error("Capacidade esgotada.");
-      }
-
-      place.capacity -= 1;
-      await place.save();
-
-      return place.capacity;
+      const places = await placeService.getPlacesByCategory(category);
+      res.json(places);
     } catch (error) {
-      throw error;
+      console.error("Erro ao buscar locais por categoria:", error);
+      res.status(500).json({ error: "Erro ao buscar locais por categoria." });
     }
   }
 }
