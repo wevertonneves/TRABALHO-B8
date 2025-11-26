@@ -9,7 +9,7 @@ COPY package-lock.json ./
 # Instala as dependências
 RUN npm install
 
-# Copia TODO o código (incluindo shared interno)
+# Copia TODO o código
 COPY . .
 
 # Cria a pasta uploads se não existir
@@ -18,5 +18,5 @@ RUN mkdir -p uploads
 # Expõe a porta da aplicação
 EXPOSE 3003
 
-# Comando para iniciar a aplicação
-CMD ["npm", "start"]
+# ✅ CORREÇÃO: Use server.js em vez de app.js
+CMD ["node", "server.js"]

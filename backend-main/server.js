@@ -20,10 +20,10 @@ const reservationsRoutes = require("./routes/reservationsRouter");
 const favoriteRoutes = require("./routes/favorites");
 const uploadRoutes = require("./routes/uploadRoutes");
 
-// 🔥 IMPORTAR O EVENT CONSUMER DO RABBITMQ
+// 🔄 IMPORTAR O EVENT CONSUMER DO REDIS
 const eventConsumer = require("./events/eventConsumer");
 
-// 🔥 IMPORTAR O EVENT PUBLISHER PARA RESERVAS
+// 🔄 IMPORTAR O EVENT PUBLISHER PARA RESERVAS (REDIS)
 const eventPublisher = require("./shared/messaging/eventPublisher");
 
 const app = express();
@@ -41,7 +41,7 @@ app.use(express.json({ limit: "10mb" }));
 app.use(express.urlencoded({ extended: true, limit: "10mb" }));
 
 // Servir uploads
-app.use("/uploads", express.static(uploadsDir));
+app.use("/api/uploads", express.static(uploadsDir));
 
 // =========================================
 // 🔧 ROTAS
@@ -57,7 +57,7 @@ app.use("/api/upload", uploadRoutes);
 app.get("/api/health", async (req, res) => {
   try {
     const dbHealth = await testConnection();
-    const rabbitHealth = await eventPublisher.healthCheck();
+    const redisHealth = await eventPublisher.healthCheck();
     
     res.json({
       service: "main-service",
@@ -65,7 +65,7 @@ app.get("/api/health", async (req, res) => {
       timestamp: new Date().toISOString(),
       dependencies: {
         database: dbHealth ? "connected" : "disconnected",
-        rabbitmq: rabbitHealth.healthy ? "connected" : "disconnected"
+        redis: redisHealth.healthy ? "connected" : "disconnected"
       },
       environment: process.env.NODE_ENV || "development"
     });
@@ -80,15 +80,15 @@ app.get("/api/health", async (req, res) => {
 });
 
 // =========================================
-// 🔧 ROTA RABBITMQ STATUS
+// 🔧 ROTA REDIS STATUS
 // =========================================
-app.get("/api/rabbitmq-status", async (req, res) => {
+app.get("/api/redis-status", async (req, res) => {
   try {
     const health = await eventPublisher.healthCheck();
     
     res.json({
       service: "main-service",
-      rabbitmq: {
+      redis: {
         status: health.healthy ? "connected" : "disconnected",
         health: health,
         publishes: [
@@ -98,7 +98,7 @@ app.get("/api/rabbitmq-status", async (req, res) => {
           "FAVORITE_ADDED",
           "FAVORITE_REMOVED"
         ],
-        consumes: [
+        subscribes: [
           "USER_CREATED",
           "USER_DELETED", 
           "USER_LOGGED_IN"
@@ -108,7 +108,7 @@ app.get("/api/rabbitmq-status", async (req, res) => {
   } catch (error) {
     res.status(500).json({
       service: "main-service",
-      rabbitmq: {
+      redis: {
         status: "error",
         error: error.message
       }
@@ -130,12 +130,12 @@ app.get("/", (req, res) => {
       upload: "/api/upload",
       uploadMultiple: "/api/upload/multiple",
       health: "/api/health",
-      rabbitmqStatus: "/api/rabbitmq-status"
+      redisStatus: "/api/redis-status"
     },
-    rabbitmq: {
+    redis: {
       status: "active",
       publishes: ["RESERVATION_CREATED", "RESERVATION_CANCELLED", "RESERVATION_UPDATED"],
-      consumes: ["USER_CREATED", "USER_DELETED", "USER_LOGGED_IN"]
+      subscribes: ["USER_CREATED", "USER_DELETED", "USER_LOGGED_IN"]
     }
   });
 });
@@ -184,33 +184,33 @@ async function initializeDatabase() {
 }
 
 // =========================================
-// 🔧 INICIALIZAÇÃO DO RABBITMQ
+// 🔧 INICIALIZAÇÃO DO REDIS
 // =========================================
-async function initializeRabbitMQ() {
+async function initializeRedis() {
   try {
-    console.log("🔄 Inicializando RabbitMQ Consumer...");
+    console.log("🔄 Inicializando Redis Consumer...");
     
-    // Aguardar um pouco para garantir que a conexão do RabbitMQ esteja estável
+    // Aguardar um pouco para garantir que a conexão do Redis esteja estável
     await new Promise(resolve => setTimeout(resolve, 2000));
     
     await eventConsumer.initialize();
-    console.log("✅ RabbitMQ Consumer inicializado com sucesso!");
+    console.log("✅ Redis Consumer inicializado com sucesso!");
     return true;
   } catch (error) {
-    console.error("❌ Erro ao inicializar RabbitMQ Consumer:", error);
-    console.log("⚠️  O serviço continuará sem RabbitMQ. Eventos não serão consumidos.");
+    console.error("❌ Erro ao inicializar Redis Consumer:", error);
+    console.log("⚠️  O serviço continuará sem Redis. Eventos não serão consumidos.");
     return false;
   }
 }
 
 // =========================================
-// 🔧 TESTAR CONEXÃO RABBITMQ
+// 🔧 TESTAR CONEXÃO REDIS
 // =========================================
-async function testRabbitMQConnection() {
+async function testRedisConnection() {
   try {
-    console.log("🔗 Testando conexão com RabbitMQ...");
+    console.log("🔗 Testando conexão com Redis...");
     
-    // ✅ CORREÇÃO: usar publishEvent em vez de publish
+    // Testar conexão publicando uma mensagem de teste
     const testMessage = {
       service: "main-service",
       startedAt: new Date().toISOString(),
@@ -219,19 +219,27 @@ async function testRabbitMQConnection() {
 
     const published = await eventPublisher.publishEvent(
       "SERVICE_STARTUP", 
-      testMessage,
-      "service.startup"
+      testMessage
     );
 
     if (published) {
-      console.log("✅ Conexão RabbitMQ (publicação) testada com sucesso!");
-      return true;
+      console.log("✅ Conexão Redis (publicação) testada com sucesso!");
+      
+      // Testar também o health check
+      const health = await eventPublisher.healthCheck();
+      if (health.healthy) {
+        console.log("✅ Health Check Redis confirmado!");
+        return true;
+      } else {
+        console.log("⚠️  Redis disponível mas health check falhou");
+        return false;
+      }
     } else {
-      console.log("⚠️  RabbitMQ disponível mas publicação falhou");
+      console.log("⚠️  Redis disponível mas publicação falhou");
       return false;
     }
   } catch (error) {
-    console.error("❌ Falha na conexão RabbitMQ (publicação):", error.message);
+    console.error("❌ Falha na conexão Redis:", error.message);
     return false;
   }
 }
@@ -246,22 +254,26 @@ async function startServer() {
     console.log("🚀 Iniciando Main Service...");
     console.log("🔍 Ambiente:", process.env.NODE_ENV || "development");
     console.log("📊 Porta:", PORT);
-    console.log("🐰 RabbitMQ:", process.env.RABBITMQ_URL || "amqp://localhost:5672");
+    console.log("🔴 Redis:", process.env.REDIS_URL || "redis://localhost:6379");
 
     // Inicializar banco de dados
     await initializeDatabase();
 
-    // Testar conexão RabbitMQ (apenas teste, não bloqueante)
-    await testRabbitMQConnection();
+    // Testar conexão Redis
+    const redisConnected = await testRedisConnection();
 
-    // Inicializar RabbitMQ Consumer (não bloqueante)
-    initializeRabbitMQ().then(success => {
-      if (success) {
-        console.log("🎉 Sistema RabbitMQ totalmente operacional!");
-      } else {
-        console.log("⚠️  Sistema operando sem RabbitMQ");
-      }
-    });
+    // Inicializar Redis Consumer (não bloqueante)
+    if (redisConnected) {
+      initializeRedis().then(success => {
+        if (success) {
+          console.log("🎉 Sistema Redis totalmente operacional!");
+        } else {
+          console.log("⚠️  Sistema operando sem Redis Consumer");
+        }
+      });
+    } else {
+      console.log("⚠️  Sistema operando sem Redis");
+    }
 
     // Iniciar servidor
     app.listen(PORT, "0.0.0.0", () => {
@@ -269,7 +281,7 @@ async function startServer() {
       console.log(`=========================================`);
       console.log(`🌐 Local:    http://localhost:${PORT}`);
       console.log(`📊 Health:   http://localhost:${PORT}/api/health`);
-      console.log(`🐰 Status:   http://localhost:${PORT}/api/rabbitmq-status`);
+      console.log(`🔴 Status:   http://localhost:${PORT}/api/redis-status`);
       console.log(`=========================================`);
       console.log(`🔧 Endpoints Principais:`);
       console.log(`   📍 Places:       http://localhost:${PORT}/api/places`);
@@ -277,9 +289,11 @@ async function startServer() {
       console.log(`   ⭐ Favorites:    http://localhost:${PORT}/api/favorites`);
       console.log(`   📤 Upload:       http://localhost:${PORT}/api/upload`);
       console.log(`=========================================`);
-      console.log(`🐰 RabbitMQ Events:`);
+      console.log(`🔴 Redis Events:`);
       console.log(`   📤 PUBLICADOS:   RESERVATION_CREATED, RESERVATION_CANCELLED, RESERVATION_UPDATED`);
       console.log(`   📥 CONSUMIDOS:   USER_CREATED, USER_DELETED, USER_LOGGED_IN`);
+      console.log(`=========================================`);
+      console.log(`💾 Uploads disponíveis em: http://localhost:${PORT}/api/uploads/`);
       console.log(`=========================================\n`);
     });
 
@@ -304,11 +318,19 @@ process.on("uncaughtException", (error) => {
 // Graceful shutdown
 process.on('SIGTERM', async () => {
   console.log('🔄 Recebido SIGTERM, encerrando servidor graciosamente...');
+  // Fechar conexões Redis se necessário
+  if (eventPublisher.disconnect) {
+    await eventPublisher.disconnect();
+  }
   process.exit(0);
 });
 
 process.on('SIGINT', async () => {
   console.log('🔄 Recebido SIGINT, encerrando servidor graciosamente...');
+  // Fechar conexões Redis se necessário
+  if (eventPublisher.disconnect) {
+    await eventPublisher.disconnect();
+  }
   process.exit(0);
 });
 
